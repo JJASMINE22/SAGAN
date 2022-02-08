@@ -54,6 +54,7 @@ class CreateModel(Model):
         else:
             x = BatchNormalization()(x)
             x = ReLU()(x)
+
         x = ConvSN2D(filters=out_channels, kernel_size=3,
                      strides=2 if down_sample else 1,
                      padding='SAME')(x)
@@ -72,11 +73,15 @@ class CreateModel(Model):
 
         return x
 
-    def init_resblock(self, init, out_channels, short_cut=False, down_sample=False):
+    def init_resblock(self, init, out_channels, is_D=False, short_cut=False, down_sample=False):
 
         x = ConvSN2D(filters=out_channels // 2 if short_cut else out_channels,
                      kernel_size=3, strides=1, padding='SAME')(init)
-        x = LeakyReLU(alpha=0.2)(x)
+        if is_D:
+            x = LeakyReLU(alpha=0.2)(x)
+        else:
+            x = BatchNormalization()(x)
+            x = ReLU()(x)
 
         x = ConvSN2D(filters=out_channels, kernel_size=3,
                      strides=2 if down_sample else 1, padding='SAME')(x)
@@ -85,7 +90,11 @@ class CreateModel(Model):
                         strides=2 if down_sample else 1, padding='SAME')(init)
 
         x = init + x
-        x = LeakyReLU(alpha=0.2)(x)
+        if is_D:
+            x = LeakyReLU(alpha=0.2)(x)
+        else:
+            x = BatchNormalization()(x)
+            x = ReLU()(x)
 
         return x
 
@@ -128,6 +137,7 @@ class CreateModel(Model):
         """
         为防止对抗器过强, 导致过学习, 使得生成器陷入局部优化,
         控制参量, 于最后一个残差块使用同等通道卷积init_resblock
+        若仍出现图像生成效果差的现象, 解开注释部分替代该结构
         """
 
         x = ConvSN2D(filters=self.d_chs, kernel_size=3, strides=1,
@@ -148,10 +158,25 @@ class CreateModel(Model):
             else:
                 # x = ScaleSelfAttention(kernel_size=(3, 3), strides=(1, 1), padding='SAME',
                 #                        data_format='channels_last', return_attention=False)(x)
-                x = self.init_resblock(x, self.d_chs, short_cut=True, down_sample=True)
+                x = self.init_resblock(x, self.d_chs, is_D=True, short_cut=True, down_sample=True)
 
         x = Flatten()(x)
         output = DenseSN(units=1, activation='sigmoid')(x)
+
+        # x = self.init_resblock(input, self.d_chs, is_D=True, short_cut=True, to_down=True)
+        #
+        # x = self.resblock(x, self.d_chs*2, is_D=True, short_cut=True, to_down=True)
+        # 
+        # x = ScaleSelfAttention(kernel_size=(1, 1), strides=(1, 1), padding='SAME',
+        #                         data_format='channels_last', return_attention=False)(x)
+        # for i in range(4):
+        #     self.d_chs *= 2
+        #     if i < 3:
+        #         x = self.resblock(x, self.d_chs*2, is_D=True, short_cut=True, to_down=True)
+        #     else:
+        #         x = self.resblock(x, self.d_chs, is_D=True, short_cut=True, to_down=False)
+        # x = Flatten()(x)
+        # output = DenseSN(units=1, activation='sigmoid')(x)
 
         return Model(input, output)
 
